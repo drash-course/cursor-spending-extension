@@ -1,6 +1,11 @@
 {
   "name": "cursor-spending",
   "displayName": "Cursor Spending",
+  "publisher": "drash-course",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/drash-course/cursor-spending-extension.git"
+  },
   "description": "Shows Cursor API usage (auto and API percent used) in the status bar",
   "version": "1.0.0",
   "license": "MIT",

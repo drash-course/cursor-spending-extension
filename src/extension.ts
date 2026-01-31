@@ -56,7 +56,7 @@ export function deactivate(): void {
 
 function startRefreshTimer(): void {
   const config = vscode.workspace.getConfiguration("cursorSpending");
-  const intervalMinutes = config.get<number>("refreshInterval", 10);
+  const intervalMinutes = config.get<number>("refreshInterval", 20);
   const intervalMs = intervalMinutes * 60 * 1000;
 
   refreshIntervalId = setInterval(() => {
@@ -77,6 +77,10 @@ async function fetchAndUpdateStatusBar(): Promise<void> {
     statusBarItem.show();
     return;
   }
+
+  statusBarItem.text = "$(sync~spin) Refreshing...";
+  statusBarItem.tooltip = "Fetching usage…";
+  statusBarItem.show();
 
   try {
     const response = await fetch(API_URL, {
@@ -202,6 +206,9 @@ function buildUsageTooltip(planUsage: PlanUsage): vscode.MarkdownString {
     lines.push("");
     lines.push(`*${planUsage.bonusTooltip.trim()}*`);
   }
+
+  lines.push("");
+  lines.push("[Refresh now](command:cursorSpending.refresh)");
 
   const md = new vscode.MarkdownString(lines.join("\n"));
   md.supportHtml = false;

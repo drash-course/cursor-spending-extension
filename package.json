@@ -31,9 +31,9 @@
         },
         "cursorSpending.refreshInterval": {
           "type": "number",
-          "default": 10,
+          "default": 20,
           "minimum": 1,
-          "maximum": 60,
+          "maximum": 1440,
           "description": "Refresh interval in minutes"
         }
       }

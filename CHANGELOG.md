@@ -5,6 +5,10 @@ All notable changes to Cursor Spending are documented here.
 ## [1.0.3]
 
 - Use Cursor icon instead of run icon for Auto usage in the status bar.
+- Increase max refresh interval to 1 day (1440 minutes).
+- Add "Refresh now" link in the usage tooltip.
+- Show "Refreshing..." in the status bar while fetching, then update with the result.
+- Change default refresh interval to 20 minutes.
 
 ## [1.0.2]
 

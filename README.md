@@ -11,7 +11,7 @@ View your Cursor usage (Auto and API) in the status bar—with a single segment,
   - Spend summary: total used, included, and remaining (when provided by the API)
   - Bonus tooltip text when present
 - **Token setup** – If the session token is missing, clicking the status bar opens a panel to paste your token, with a link to the dashboard and a Save button. The token is stored in your settings.
-- **Refresh** – Data refreshes automatically (default: every 10 minutes). Use **Cursor Spending: Refresh usage** to refresh immediately.
+- **Refresh** – Data refreshes automatically (default: every 20 minutes). Use **Cursor Spending: Refresh usage** to refresh immediately.
 
 ## Requirements
 
@@ -43,14 +43,14 @@ View your Cursor usage (Auto and API) in the status bar—with a single segment,
    - Open Settings (`Ctrl+,` / `Cmd+,`), search for **Cursor Spending**, and paste the token into **Cursor Spending: Session Token**.
    - Or leave the token empty and click the status bar segment; the setup panel will open so you can paste and save the token there.
 
-3. The status bar will show usage and refresh on the configured interval (default 10 minutes).
+3. The status bar will show usage and refresh on the configured interval (default 20 minutes).
 
 ## Extension Settings
 
 | Setting | Description | Default |
 |--------|-------------|---------|
 | `cursorSpending.sessionToken` | Your WorkosCursorSessionToken cookie value from [cursor.com/dashboard](https://cursor.com/dashboard). Get it from DevTools → Application → Cookies. | `""` |
-| `cursorSpending.refreshInterval` | How often to fetch usage, in minutes. | `10` (min: 1, max: 60) |
+| `cursorSpending.refreshInterval` | How often to fetch usage, in minutes. | `20` (min: 1, max: 1440 = 1 day) |
 
 ## Commands
 

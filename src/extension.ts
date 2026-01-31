@@ -6,27 +6,27 @@ const DASHBOARD_URL = "https://cursor.com/dashboard?tab=spending";
 interface PlanUsage {
   autoPercentUsed?: number;
   apiPercentUsed?: number;
+  limit?: number;
+  totalSpend?: number;
+  includedSpend?: number;
+  remaining?: number;
+  bonusTooltip?: string;
 }
 
 interface UsageResponse {
   planUsage?: PlanUsage;
 }
 
-let autoStatusBarItem: vscode.StatusBarItem;
-let apiStatusBarItem: vscode.StatusBarItem;
+let statusBarItem: vscode.StatusBarItem;
 let refreshIntervalId: ReturnType<typeof setInterval> | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
-  autoStatusBarItem = vscode.window.createStatusBarItem(
+  statusBarItem = vscode.window.createStatusBarItem(
     vscode.StatusBarAlignment.Left,
     100
   );
-  apiStatusBarItem = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Left,
-    99
-  );
 
-  context.subscriptions.push(autoStatusBarItem, apiStatusBarItem);
+  context.subscriptions.push(statusBarItem);
 
   const refreshCommand = vscode.commands.registerCommand(
     "cursorSpending.refresh",
@@ -70,17 +70,11 @@ async function fetchAndUpdateStatusBar(): Promise<void> {
 
   if (!token) {
     setStatusBarNoToken(
-      autoStatusBarItem,
-      "Auto: —",
+      statusBarItem,
+      "$(run) Auto: —  $(cloud) API: —",
       "Token not configured. Click to set up."
     );
-    setStatusBarNoToken(
-      apiStatusBarItem,
-      "API: —",
-      "Token not configured. Click to set up."
-    );
-    autoStatusBarItem.show();
-    apiStatusBarItem.show();
+    statusBarItem.show();
     return;
   }
 
@@ -113,58 +107,131 @@ async function fetchAndUpdateStatusBar(): Promise<void> {
       throw new Error("Invalid response: missing planUsage");
     }
 
-    const autoPercent =
-      typeof planUsage.autoPercentUsed === "number"
-        ? planUsage.autoPercentUsed
-        : null;
-    const apiPercent =
-      typeof planUsage.apiPercentUsed === "number"
-        ? planUsage.apiPercentUsed
-        : null;
+    setStatusBarUsage(statusBarItem, planUsage);
 
-    setStatusBarUsage(
-      autoStatusBarItem,
-      "Auto",
-      autoPercent,
-      "Auto (in-editor) usage percent"
-    );
-    setStatusBarUsage(
-      apiStatusBarItem,
-      "API",
-      apiPercent,
-      "API usage percent"
-    );
-
-    autoStatusBarItem.show();
-    apiStatusBarItem.show();
+    statusBarItem.show();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setStatusBarError(
-      autoStatusBarItem,
-      "Auto: $(error)",
+      statusBarItem,
+      "$(cursor) Auto: $(error)  $(cloud) API: $(error)",
       `Failed to fetch usage: ${message}`
     );
-    setStatusBarError(
-      apiStatusBarItem,
-      "API: $(error)",
-      `Failed to fetch usage: ${message}`
-    );
-    autoStatusBarItem.show();
-    apiStatusBarItem.show();
+    statusBarItem.show();
   }
+}
+
+function formatCentsAsUsd(cents: number): string {
+  return (cents / 100).toFixed(2);
+}
+
+const PROGRESS_BAR_WIDTH = 24;
+const PROGRESS_FILL = "█";
+const PROGRESS_EMPTY = "░";
+
+function progressBar(percent: number, width: number = PROGRESS_BAR_WIDTH): string {
+  const filled = Math.min(width, Math.round((percent / 100) * width));
+  const empty = width - filled;
+  return PROGRESS_FILL.repeat(filled) + PROGRESS_EMPTY.repeat(empty);
+}
+
+function buildUsageTooltip(planUsage: PlanUsage): vscode.MarkdownString {
+  const autoPercent =
+    typeof planUsage.autoPercentUsed === "number"
+      ? planUsage.autoPercentUsed.toFixed(1)
+      : "—";
+  const apiPercent =
+    typeof planUsage.apiPercentUsed === "number"
+      ? planUsage.apiPercentUsed.toFixed(1)
+      : "—";
+
+  const autoPercentNum =
+    typeof planUsage.autoPercentUsed === "number"
+      ? planUsage.autoPercentUsed
+      : 0;
+  const apiPercentNum =
+    typeof planUsage.apiPercentUsed === "number"
+      ? planUsage.apiPercentUsed
+      : 0;
+
+  const lines: string[] = [];
+
+  lines.push(`### Auto: ${autoPercent}%`);
+  lines.push("");
+  lines.push("```");
+  lines.push(progressBar(autoPercentNum));
+  lines.push("```");
+  lines.push("");
+  lines.push("Consumed by Auto. Additional usage consumes API quota.");
+  lines.push("");
+
+  lines.push(`### API: ${apiPercent}%`);
+  lines.push("");
+  lines.push("```");
+  lines.push(progressBar(apiPercentNum));
+  lines.push("```");
+  lines.push("");
+  const apiUsageUSD =
+    typeof planUsage.limit === "number" ? planUsage.limit / 100 : null;
+  lines.push(
+    apiUsageUSD
+      ? `Consumed by named models. Your plan includes at least $${apiUsageUSD.toFixed(2)} of API usage.`
+      : "Consumed by named models."
+  );
+
+  const hasSpend =
+    typeof planUsage.totalSpend === "number" ||
+    typeof planUsage.includedSpend === "number" ||
+    typeof planUsage.remaining === "number";
+  if (hasSpend) {
+    lines.push("");
+    const parts: string[] = [];
+    if (typeof planUsage.totalSpend === "number") {
+      parts.push(`$${formatCentsAsUsd(planUsage.totalSpend)} used`);
+    }
+    if (typeof planUsage.includedSpend === "number") {
+      parts.push(`$${formatCentsAsUsd(planUsage.includedSpend)} included`);
+    }
+    if (typeof planUsage.remaining === "number") {
+      parts.push(`$${formatCentsAsUsd(planUsage.remaining)} remaining`);
+    }
+    lines.push("Spend: " + parts.join(", ") + ".");
+  }
+
+  if (planUsage.bonusTooltip && planUsage.bonusTooltip.trim()) {
+    lines.push("");
+    lines.push(`*${planUsage.bonusTooltip.trim()}*`);
+  }
+
+  const md = new vscode.MarkdownString(lines.join("\n"));
+  md.supportHtml = false;
+  md.isTrusted = true;
+  return md;
 }
 
 function setStatusBarUsage(
   item: vscode.StatusBarItem,
-  label: string,
-  percent: number | null,
-  tooltip: string
+  planUsage: PlanUsage
 ): void {
-  const icon = label === "Auto" ? "$(cpu)" : "$(cloud)";
-  const text =
-    percent !== null ? `${icon} ${label}: ${percent.toFixed(1)}%` : `${icon} ${label}: —`;
-  item.text = text;
-  item.tooltip = tooltip;
+  const autoPercent =
+    typeof planUsage.autoPercentUsed === "number"
+      ? planUsage.autoPercentUsed
+      : null;
+  const apiPercent =
+    typeof planUsage.apiPercentUsed === "number"
+      ? planUsage.apiPercentUsed
+      : null;
+
+  const autoText =
+    autoPercent !== null
+      ? `$(run) Auto: ${autoPercent.toFixed(1)}%`
+      : "$(run) Auto: —";
+  const apiText =
+    apiPercent !== null
+      ? `$(cloud) API: ${apiPercent.toFixed(1)}%`
+      : "$(cloud) API: —";
+  item.text = `${autoText}  ${apiText}`;
+  item.tooltip = buildUsageTooltip(planUsage);
   item.command = {
     title: "Open Cursor Dashboard",
     command: "vscode.open",
@@ -174,10 +241,10 @@ function setStatusBarUsage(
 
 function setStatusBarNoToken(
   item: vscode.StatusBarItem,
-  text: string,
+  displayText: string,
   tooltip: string
 ): void {
-  item.text = text;
+  item.text = displayText;
   item.tooltip = tooltip;
   item.command = {
     title: "Configure session token",

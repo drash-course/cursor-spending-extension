@@ -1,58 +1,76 @@
 # Cursor Spending
 
-A Cursor/VS Code extension that shows your Cursor API usage (auto and API percent used) in the status bar. Data refreshes periodically (default: every 10 minutes).
+View your Cursor usage (Auto and API) in the status bar—with a single segment, progress bars in the tooltip, and spend details.
 
 ## Features
 
-- **Status bar**: Displays **Auto** (in-editor) and **API** usage percentages in the bottom bar.
-- **Click to open**: Click either status bar item to open the Cursor dashboard.
-- **Periodic refresh**: Fetches usage from the Cursor API every 10 minutes (configurable).
-- **Manual refresh**: Run the command **Cursor Spending: Refresh usage** to fetch immediately.
+- **Status bar** – One segment showing **Auto** and **API** usage percentages (e.g. `Auto: 1.4%  API: 4.5%`). Click to open the [Cursor dashboard](https://cursor.com/dashboard?tab=spending).
+- **Rich tooltip** – Hover to see:
+  - Progress bars for Auto and API usage
+  - Short descriptions of what each quota is for
+  - Spend summary: total used, included, and remaining (when provided by the API)
+  - Bonus tooltip text when present
+- **Token setup** – If the session token is missing, clicking the status bar opens a panel to paste your token, with a link to the dashboard and a Save button. The token is stored in your settings.
+- **Refresh** – Data refreshes automatically (default: every 10 minutes). Use **Cursor Spending: Refresh usage** to refresh immediately.
 
-## Setup
+## Requirements
 
-### 1. Get your session token
+- **VS Code** or **Cursor** `^1.85.0`
+- A Cursor account (used to obtain the session token)
 
-The extension needs your Cursor session cookie to call the usage API.
+## Installation
 
-1. Open [cursor.com/dashboard](https://cursor.com/dashboard) in a browser and log in.
-2. Open DevTools (e.g. **F12** or **Cmd+Option+I**).
-3. Go to **Application** (Chrome) or **Storage** (Firefox) → **Cookies** → `https://cursor.com`.
-4. Find the cookie named **WorkosCursorSessionToken**.
-5. Copy its **Value** (the long string).
+### From the Marketplace
 
-### 2. Configure the extension
+1. Open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`).
+2. Search for **Cursor Spending**.
+3. Click **Install**.
 
-1. In Cursor/VS Code, open **Settings** (**Cmd+,** / **Ctrl+,**).
-2. Search for `cursor spending` or open your `settings.json`.
-3. Set **Cursor Spending: Session Token** to the value you copied:
+### Install from VSIX (local build)
 
-   ```json
-   "cursorSpending.sessionToken": "user_01KF..."
-   ```
+1. Clone the repo and run: `npm install && npm run compile`
+2. Run: `npx @vscode/vsce package`
+3. In the editor: **Extensions** → **...** → **Install from VSIX...** and select the generated `.vsix` file.
 
-   Or in the UI, paste the token into the "Cursor Spending: Session Token" field.
+## Quick Start
 
-### 3. Optional settings
+1. **Get your session token**
+   - Open [cursor.com/dashboard](https://cursor.com/dashboard) in a browser and sign in.
+   - Open DevTools (**F12** or **Cmd+Option+I**) → **Application** (Chrome) or **Storage** (Firefox) → **Cookies** → `https://cursor.com`.
+   - Copy the **Value** of the **WorkosCursorSessionToken** cookie.
 
-- **Cursor Spending: Refresh Interval** – Refresh interval in minutes (default: `10`). Min: 1, max: 60.
+2. **Configure the extension**
+   - Open Settings (`Ctrl+,` / `Cmd+,`), search for **Cursor Spending**, and paste the token into **Cursor Spending: Session Token**.
+   - Or leave the token empty and click the status bar segment; the setup panel will open so you can paste and save the token there.
 
-## Install locally
+3. The status bar will show usage and refresh on the configured interval (default 10 minutes).
 
-1. Clone or download this repo.
-2. Run `npm install` then `npm run compile`.
-3. In Cursor/VS Code: **Extensions** → **...** → **Install from VSIX...**, or run:
-   - `npm install -g @vscode/vsce` then `vsce package` to create a `.vsix` and install it.
+## Extension Settings
 
-Or run from source:
-
-1. Open this folder in Cursor/VS Code.
-2. Press **F5** to launch "Extension Development Host"; the extension runs in the new window.
-
-## Security
-
-The session token is stored in your editor settings. Do not share it or commit it to a repo. The extension only uses it to call `https://cursor.com/api/dashboard/get-current-period-usage`.
+| Setting | Description | Default |
+|--------|-------------|---------|
+| `cursorSpending.sessionToken` | Your WorkosCursorSessionToken cookie value from [cursor.com/dashboard](https://cursor.com/dashboard). Get it from DevTools → Application → Cookies. | `""` |
+| `cursorSpending.refreshInterval` | How often to fetch usage, in minutes. | `10` (min: 1, max: 60) |
 
 ## Commands
 
-- **Cursor Spending: Refresh usage** – Fetches current usage and updates the status bar.
+| Command | Description |
+|--------|-------------|
+| **Cursor Spending: Refresh usage** | Fetches current usage and updates the status bar. |
+| **Cursor Spending: Configure session token** | Opens the token setup panel (input, dashboard link, Save). |
+
+## Security and Privacy
+
+- The session token is stored in your editor **user settings** (global). Do not share it or commit it to a repository.
+- The extension uses your token to call `https://cursor.com/api/dashboard/get-current-period-usage` (POST, with the token in a Cookie header). Your token is not sent anywhere else.
+
+## Development
+
+- Open this folder in VS Code or Cursor.
+- Run `npm install` and `npm run compile`.
+- Press **F5** to launch an Extension Development Host with the extension loaded.
+- Use **Developer: Reload Window** in the host to pick up code changes after recompiling.
+
+## License
+
+MIT

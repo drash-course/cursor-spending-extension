@@ -71,7 +71,7 @@ async function fetchAndUpdateStatusBar(): Promise<void> {
   if (!token) {
     setStatusBarNoToken(
       statusBarItem,
-      "$(run) Auto: —  $(cloud) API: —",
+      "$(cursor) Auto: —  $(cloud) API: —",
       "Token not configured. Click to set up."
     );
     statusBarItem.show();
@@ -224,8 +224,8 @@ function setStatusBarUsage(
 
   const autoText =
     autoPercent !== null
-      ? `$(run) Auto: ${autoPercent.toFixed(1)}%`
-      : "$(run) Auto: —";
+      ? `$(cursor) Auto: ${autoPercent.toFixed(1)}%`
+      : "$(cursor) Auto: —";
   const apiText =
     apiPercent !== null
       ? `$(cloud) API: ${apiPercent.toFixed(1)}%`

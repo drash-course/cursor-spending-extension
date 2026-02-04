@@ -2,6 +2,10 @@
 
 All notable changes to Cursor Spending are documented here.
 
+## [1.0.4]
+
+- Add preview screenshot to README.
+
 ## [1.0.3]
 
 - Use Cursor icon instead of run icon for Auto usage in the status bar.

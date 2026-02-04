@@ -2,6 +2,8 @@
 
 View your Cursor usage (Auto and API) in the status bar—with a single segment, progress bars in the tooltip, and spend details.
 
+![Screenshot](images/cursor-usage-preview.png)
+
 ## Features
 
 - **Status bar** – One segment showing **Auto** and **API** usage percentages (e.g. `Auto: 1.4%  API: 4.5%`). Click to open the [Cursor dashboard](https://cursor.com/dashboard?tab=spending).

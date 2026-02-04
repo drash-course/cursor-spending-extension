@@ -7,7 +7,7 @@
     "url": "https://github.com/drash-course/cursor-spending-extension.git"
   },
   "description": "Shows Cursor API usage (auto and API percent used) in the status bar",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "icon": "images/spend_icon.png",
   "license": "MIT",
   "engines": {

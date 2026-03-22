@@ -2,6 +2,10 @@
 
 All notable changes to Cursor Spending are documented here.
 
+## [1.0.5]
+
+- Mirror Cursor dashboard wording in tooltips: Auto and Composer models vs other models, API quota for overage, and plan API usage when the API returns it.
+
 ## [1.0.4]
 
 - Add preview screenshot to README.

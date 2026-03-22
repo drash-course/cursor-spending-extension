@@ -9,7 +9,7 @@ View your Cursor usage (Auto and API) in the status bar—with a single segment,
 - **Status bar** – One segment showing **Auto** and **API** usage percentages (e.g. `Auto: 1.4%  API: 4.5%`). Click to open the [Cursor dashboard](https://cursor.com/dashboard?tab=spending).
 - **Rich tooltip** – Hover to see:
   - Progress bars for Auto and API usage
-  - Short descriptions of what each quota is for
+  - What each bar means: Auto and Composer models vs other models, extra usage vs API quota, and included API usage when the dashboard API reports it
   - Spend summary: total used, included, and remaining (when provided by the API)
   - Bonus tooltip text when present
 - **Token setup** – If the session token is missing, clicking the status bar opens a panel to paste your token, with a link to the dashboard and a Save button. The token is stored in your settings.

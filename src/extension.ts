@@ -166,7 +166,9 @@ function buildUsageTooltip(planUsage: PlanUsage): vscode.MarkdownString {
   lines.push(progressBar(autoPercentNum));
   lines.push("```");
   lines.push("");
-  lines.push("Consumed by Auto. Additional usage consumes API quota.");
+  lines.push(
+    "Consumed by Auto and Composer models. Additional usage consumes API quota."
+  );
   lines.push("");
 
   lines.push(`### API: ${apiPercent}%`);
@@ -179,8 +181,8 @@ function buildUsageTooltip(planUsage: PlanUsage): vscode.MarkdownString {
     typeof planUsage.limit === "number" ? planUsage.limit / 100 : null;
   lines.push(
     apiUsageUSD
-      ? `Consumed by named models. Your plan includes at least $${apiUsageUSD.toFixed(2)} of API usage.`
-      : "Consumed by named models."
+      ? `Consumed by other models. Your plan includes at least $${apiUsageUSD.toFixed(2)} of API usage.`
+      : "Consumed by other models."
   );
 
   const hasSpend =

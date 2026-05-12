@@ -12,13 +12,31 @@ interface PlanUsage {
   includedSpend?: number;
   bonusSpend?: number;
   remaining?: number;
+  remainingBonus?: boolean;
   bonusTooltip?: string;
+}
+
+/** Present when user has set a finite on-demand spending cap (not off / not unlimited). */
+interface SpendLimitUsage {
+  individualLimit?: number;
+  individualRemaining?: number;
+  limitType?: string;
+  pooledLimit?: number;
+  pooledUsed?: number;
+  pooledRemaining?: number;
 }
 
 interface UsageResponse {
   billingCycleStart?: string;
   billingCycleEnd?: string;
   planUsage?: PlanUsage;
+  spendLimitUsage?: SpendLimitUsage;
+  displayThreshold?: number;
+  enabled?: boolean;
+  displayMessage?: string;
+  autoModelSelectedDisplayMessage?: string;
+  namedModelSelectedDisplayMessage?: string;
+  autoBucketModels?: string[];
 }
 
 let statusBarItem: vscode.StatusBarItem;
@@ -78,7 +96,7 @@ async function fetchAndUpdateStatusBar(): Promise<void> {
   if (!token) {
     setStatusBarNoToken(
       statusBarItem,
-      "$(cursor) Auto: —  $(cloud) API: —",
+      "$(cursor) Auto: —  $(cloud) API: —  $: —",
       "Token not configured. Click to set up."
     );
     statusBarItem.show();
@@ -125,14 +143,20 @@ async function fetchAndUpdateStatusBar(): Promise<void> {
       throw new Error("Invalid response: missing planUsage");
     }
 
-    setStatusBarUsage(statusBarItem, planUsage, data.billingCycleStart, data.billingCycleEnd);
+    setStatusBarUsage(
+      statusBarItem,
+      planUsage,
+      data.billingCycleStart,
+      data.billingCycleEnd,
+      data.spendLimitUsage
+    );
 
     statusBarItem.show();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     setStatusBarError(
       statusBarItem,
-      "$(cursor) Auto: $(error)  $(cloud) API: $(error)",
+      "$(cursor) Auto: $(error)  $(cloud) API: $(error)  $: $(error)",
       `Failed to fetch usage: ${message}`
     );
     statusBarItem.show();
@@ -142,6 +166,9 @@ async function fetchAndUpdateStatusBar(): Promise<void> {
 const PROGRESS_BAR_WIDTH = 24;
 const PROGRESS_FILL = "▓";
 const PROGRESS_EMPTY = "░";
+
+/** Thick horizontal rule for tooltip section breaks (monospace; boxed for visibility). */
+const TOOLTIP_DIVIDER_LINE = "━".repeat(Math.max(PROGRESS_BAR_WIDTH, 60));
 
 function progressBar(percent: number, width: number = PROGRESS_BAR_WIDTH): string {
   const filled = Math.min(width, Math.round((percent / 100) * width));
@@ -212,14 +239,107 @@ function countDays(from: Date, to: Date, weekdaysOnly: boolean): number {
   return count;
 }
 
+/**
+ * When linear pace exceeds 100% by cycle end, estimate calendar date of the 100% cross.
+ * Model matches projection: usage grows 0→current over elapsed units, extended linearly.
+ */
+function addBillingTimeFromStart(
+  start: Date,
+  units: number,
+  weekdaysOnly: boolean
+): Date {
+  const n = Math.max(0, Math.round(units));
+  const d = new Date(start);
+  d.setHours(0, 0, 0, 0);
+  if (n === 0) {
+    return d;
+  }
+  if (!weekdaysOnly) {
+    d.setDate(d.getDate() + n);
+    return d;
+  }
+  let remaining = n;
+  while (remaining > 0) {
+    const day = d.getDay();
+    if (day !== 0 && day !== 6) {
+      remaining--;
+      if (remaining === 0) {
+        return d;
+      }
+    }
+    d.setDate(d.getDate() + 1);
+  }
+  return d;
+}
+
+function projectedCrossingNote(
+  billingStart: Date,
+  billingEnd: Date,
+  now: Date,
+  elapsedUnits: number,
+  currentPercent: number,
+  projectedPercent: number,
+  weekdaysOnly: boolean
+): string {
+  if (projectedPercent <= 100 || currentPercent <= 0) {
+    return "";
+  }
+  if (currentPercent >= 100) {
+    return " (at/over limit now)";
+  }
+  const unitsToHundred = (100 / currentPercent) * elapsedUnits;
+  const crossing = addBillingTimeFromStart(billingStart, unitsToHundred, weekdaysOnly);
+  if (crossing.getTime() <= now.getTime()) {
+    return " (already over limit)";
+  }
+  if (crossing.getTime() > billingEnd.getTime()) {
+    return " (>100% pace after cycle end)";
+  }
+  return ` @ ~${formatResetDate(crossing)}`;
+}
+
 function formatResetDate(date: Date): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+/** Label width for projection monospace block (longest: "On-demand:"). */
+const PROJECTION_MONO_LABEL_WIDTH = "On-demand:".length;
+
+function projectionMonoLine(label: string, value: string): string {
+  return `${label.padEnd(PROJECTION_MONO_LABEL_WIDTH)} ${value}`;
+}
+
+function formatUsdFromCents(cents: number): string {
+  return (cents / 100).toFixed(2);
+}
+
+/**
+ * On-demand cap is active only when the API includes both individual limit and remaining (cents).
+ */
+function getOnDemandCapMetrics(
+  slu: SpendLimitUsage | undefined
+): { limitCents: number; remainingCents: number; usedCents: number; percentUsed: number } | null {
+  if (
+    typeof slu?.individualLimit !== "number" ||
+    typeof slu?.individualRemaining !== "number"
+  ) {
+    return null;
+  }
+  const limitCents = slu.individualLimit;
+  if (limitCents <= 0) {
+    return null;
+  }
+  const remainingCents = slu.individualRemaining;
+  const usedCents = limitCents - remainingCents;
+  const percentUsed = (usedCents / limitCents) * 100;
+  return { limitCents, remainingCents, usedCents, percentUsed };
 }
 
 function buildUsageTooltip(
   planUsage: PlanUsage,
   billingCycleStart?: string,
-  billingCycleEnd?: string
+  billingCycleEnd?: string,
+  spendLimitUsage?: SpendLimitUsage
 ): vscode.MarkdownString {
   const config = vscode.workspace.getConfiguration("cursorSpending");
   const projectionMode = config.get<string>("projectionMode", "allDays");
@@ -229,15 +349,14 @@ function buildUsageTooltip(
     typeof planUsage.autoPercentUsed === "number"
       ? planUsage.autoPercentUsed.toFixed(1)
       : "—";
-  const apiPercent =
-    typeof planUsage.apiPercentUsed === "number"
-      ? planUsage.apiPercentUsed.toFixed(1)
-      : "—";
-
   const autoPercentNum =
     typeof planUsage.autoPercentUsed === "number"
       ? planUsage.autoPercentUsed
       : 0;
+  const apiPercent =
+    typeof planUsage.apiPercentUsed === "number"
+      ? planUsage.apiPercentUsed.toFixed(1)
+      : "—";
   const apiPercentNum =
     typeof planUsage.apiPercentUsed === "number"
       ? planUsage.apiPercentUsed
@@ -258,12 +377,16 @@ function buildUsageTooltip(
 
   // Auto: subtext inline with %, then extra air before the bar
   lines.push(
-    `**Auto: ${autoPercent}%** — Consumed by Auto and Composer; extra draws on API quota.`
+    `**Auto: ${autoPercent}%** — Consumed by Auto and Composer; overage billed at API rates.`
   );
   lines.push("");
   lines.push("");
   lines.push("```");
   lines.push(progressBar(autoPercentNum));
+  lines.push("```");
+  lines.push("");
+  lines.push("```");
+  lines.push(TOOLTIP_DIVIDER_LINE);
   lines.push("```");
 
   // API: same pattern
@@ -278,10 +401,36 @@ function buildUsageTooltip(
     lines.push("");
     lines.push(`Your plan includes **$${limitUsd.toFixed(2)}** of API usage.`);
   }
-
+  if (typeof planUsage.bonusSpend === "number" && planUsage.bonusSpend > 0) {
+    lines.push(
+      `Bonus usage so far this period: **$${formatUsdFromCents(planUsage.bonusSpend)}**`
+    );
+  }
   if (planUsage.bonusTooltip && planUsage.bonusTooltip.trim()) {
     lines.push("");
     lines.push(`*${planUsage.bonusTooltip.trim()}*`);
+  }
+
+  // On-demand (overage) cap
+  const odMetrics = getOnDemandCapMetrics(spendLimitUsage);
+  lines.push("");
+  if (!odMetrics) {
+    lines.push(
+      "*You have not configured an on-demand spending cap (usage is off or unlimited).*"
+    );
+  } else {
+    const odPct = odMetrics.percentUsed.toFixed(1);
+    const usedUsd = formatUsdFromCents(odMetrics.usedCents);
+    const limitOdUsd = formatUsdFromCents(odMetrics.limitCents);
+    const remUsd = formatUsdFromCents(odMetrics.remainingCents);
+    lines.push(
+      `**On-demand: ${odPct}%** of cap — **$${usedUsd}** used · **$${remUsd}** left · **$${limitOdUsd}** cap.`
+    );
+    lines.push("");
+    lines.push("");
+    lines.push("```");
+    lines.push(progressBar(odMetrics.percentUsed));
+    lines.push("```");
   }
 
   // Straight-line projection (markdown list so each line renders separately)
@@ -296,7 +445,10 @@ function buildUsageTooltip(
       const resetStr = formatResetDate(billing.end);
 
       lines.push("");
-      lines.push(`**Projection** (${modeLabel}, ${elapsedDays}/${totalDays} days)`);
+      lines.push("```");
+      lines.push(TOOLTIP_DIVIDER_LINE);
+      lines.push("```");
+      lines.push(`**Projected usage** by ${resetStr} (${modeLabel} only, ${elapsedDays}/${totalDays} days)`);
       lines.push("");
 
       const projAuto = autoPercentNum * ratio;
@@ -304,8 +456,52 @@ function buildUsageTooltip(
       const autoWarn = projAuto > 100 ? " ⚠️ over 100%" : "";
       const apiWarn = projApi > 100 ? " ⚠️ over 100%" : "";
 
-      lines.push(`- **Auto:** ~${projAuto.toFixed(1)}% by ${resetStr}${autoWarn}`);
-      lines.push(`- **API:** ~${projApi.toFixed(1)}% by ${resetStr}${apiWarn}`);
+      const autoCross = projectedCrossingNote(
+        billing.start,
+        billing.end,
+        now,
+        elapsedDays,
+        autoPercentNum,
+        projAuto,
+        weekdaysOnly
+      );
+      const apiCross = projectedCrossingNote(
+        billing.start,
+        billing.end,
+        now,
+        elapsedDays,
+        apiPercentNum,
+        projApi,
+        weekdaysOnly
+      );
+
+      lines.push("```");
+      lines.push(
+        projectionMonoLine("Auto:", `~${projAuto.toFixed(1)}%${autoWarn}${autoCross}`)
+      );
+      lines.push(
+        projectionMonoLine("API:", `~${projApi.toFixed(1)}%${apiWarn}${apiCross}`)
+      );
+      if (odMetrics) {
+        const projOd = odMetrics.percentUsed * ratio;
+        const odWarn = projOd > 100 ? " ⚠️ over 100%" : "";
+        const odCross = projectedCrossingNote(
+          billing.start,
+          billing.end,
+          now,
+          elapsedDays,
+          odMetrics.percentUsed,
+          projOd,
+          weekdaysOnly
+        );
+        lines.push(
+          projectionMonoLine(
+            "On-demand:",
+            `~${projOd.toFixed(1)}% of cap${odWarn}${odCross}`
+          )
+        );
+      }
+      lines.push("```");
     }
   }
 
@@ -322,7 +518,8 @@ function setStatusBarUsage(
   item: vscode.StatusBarItem,
   planUsage: PlanUsage,
   billingCycleStart?: string,
-  billingCycleEnd?: string
+  billingCycleEnd?: string,
+  spendLimitUsage?: SpendLimitUsage
 ): void {
   const autoPercent =
     typeof planUsage.autoPercentUsed === "number"
@@ -341,8 +538,19 @@ function setStatusBarUsage(
     apiPercent !== null
       ? `$(cloud) API: ${apiPercent.toFixed(1)}%`
       : "$(cloud) API: —";
-  item.text = `${autoText}  ${apiText}`;
-  item.tooltip = buildUsageTooltip(planUsage, billingCycleStart, billingCycleEnd);
+
+  const od = getOnDemandCapMetrics(spendLimitUsage);
+  const odSegment = od
+    ? `  $: ${od.percentUsed.toFixed(1)}%`
+    : "";
+
+  item.text = `${autoText}  ${apiText}${odSegment}`;
+  item.tooltip = buildUsageTooltip(
+    planUsage,
+    billingCycleStart,
+    billingCycleEnd,
+    spendLimitUsage
+  );
   item.command = {
     title: "Open Cursor Dashboard",
     command: "vscode.open",

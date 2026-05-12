@@ -5,3 +5,6 @@ out/
 .DS_Store
 *.log
 npm-debug.log*
+# Local billing dump token (never commit)
+.cursor_billing_token
+scripts/.token

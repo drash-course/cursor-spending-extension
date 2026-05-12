@@ -6,19 +6,24 @@ const DASHBOARD_URL = "https://cursor.com/dashboard?tab=spending";
 interface PlanUsage {
   autoPercentUsed?: number;
   apiPercentUsed?: number;
+  totalPercentUsed?: number;
   limit?: number;
   totalSpend?: number;
   includedSpend?: number;
+  bonusSpend?: number;
   remaining?: number;
   bonusTooltip?: string;
 }
 
 interface UsageResponse {
+  billingCycleStart?: string;
+  billingCycleEnd?: string;
   planUsage?: PlanUsage;
 }
 
 let statusBarItem: vscode.StatusBarItem;
 let refreshIntervalId: ReturnType<typeof setInterval> | undefined;
+let outputChannel: vscode.OutputChannel | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   statusBarItem = vscode.window.createStatusBarItem(
@@ -26,6 +31,8 @@ export function activate(context: vscode.ExtensionContext): void {
     100
   );
 
+  outputChannel = vscode.window.createOutputChannel("Cursor Spending");
+  context.subscriptions.push(outputChannel);
   context.subscriptions.push(statusBarItem);
 
   const refreshCommand = vscode.commands.registerCommand(
@@ -105,13 +112,20 @@ async function fetchAndUpdateStatusBar(): Promise<void> {
     }
 
     const data = (await response.json()) as UsageResponse;
+
+    // Log full API response for diagnostics
+    if (outputChannel) {
+      outputChannel.appendLine(`[${new Date().toISOString()}] API response:`);
+      outputChannel.appendLine(JSON.stringify(data, null, 2));
+    }
+
     const planUsage = data?.planUsage;
 
     if (!planUsage) {
       throw new Error("Invalid response: missing planUsage");
     }
 
-    setStatusBarUsage(statusBarItem, planUsage);
+    setStatusBarUsage(statusBarItem, planUsage, data.billingCycleStart, data.billingCycleEnd);
 
     statusBarItem.show();
   } catch (err) {
@@ -125,12 +139,8 @@ async function fetchAndUpdateStatusBar(): Promise<void> {
   }
 }
 
-function formatCentsAsUsd(cents: number): string {
-  return (cents / 100).toFixed(2);
-}
-
 const PROGRESS_BAR_WIDTH = 24;
-const PROGRESS_FILL = "█";
+const PROGRESS_FILL = "▓";
 const PROGRESS_EMPTY = "░";
 
 function progressBar(percent: number, width: number = PROGRESS_BAR_WIDTH): string {
@@ -139,7 +149,82 @@ function progressBar(percent: number, width: number = PROGRESS_BAR_WIDTH): strin
   return PROGRESS_FILL.repeat(filled) + PROGRESS_EMPTY.repeat(empty);
 }
 
-function buildUsageTooltip(planUsage: PlanUsage): vscode.MarkdownString {
+/**
+ * Resolves the billing period start and end dates.
+ * Prefers API-provided Unix-ms strings; falls back to config billingCycleDay.
+ */
+function resolveBillingPeriod(
+  billingCycleStart?: string,
+  billingCycleEnd?: string
+): { start: Date; end: Date } | null {
+  if (billingCycleStart && billingCycleEnd) {
+    const start = new Date(parseInt(billingCycleStart, 10));
+    const end = new Date(parseInt(billingCycleEnd, 10));
+    if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+      return { start, end };
+    }
+  }
+
+  const config = vscode.workspace.getConfiguration("cursorSpending");
+  const billingCycleDay = config.get<number>("billingCycleDay", 0);
+  if (billingCycleDay >= 1 && billingCycleDay <= 31) {
+    const now = new Date();
+    const currentDay = now.getDate();
+    let startMonth = now.getMonth();
+    let startYear = now.getFullYear();
+    if (currentDay < billingCycleDay) {
+      startMonth -= 1;
+      if (startMonth < 0) {
+        startMonth = 11;
+        startYear -= 1;
+      }
+    }
+    const start = new Date(startYear, startMonth, billingCycleDay);
+    const endMonth = (startMonth + 1) % 12;
+    const endYear = startMonth === 11 ? startYear + 1 : startYear;
+    const end = new Date(endYear, endMonth, billingCycleDay);
+    return { start, end };
+  }
+
+  return null;
+}
+
+/**
+ * Counts days between two dates.
+ * When weekdaysOnly is true, counts Monday–Friday only.
+ */
+function countDays(from: Date, to: Date, weekdaysOnly: boolean): number {
+  if (!weekdaysOnly) {
+    return Math.max(0, Math.round((to.getTime() - from.getTime()) / 86400000));
+  }
+  let count = 0;
+  const cursor = new Date(from);
+  cursor.setHours(0, 0, 0, 0);
+  const toMidnight = new Date(to);
+  toMidnight.setHours(0, 0, 0, 0);
+  while (cursor < toMidnight) {
+    const day = cursor.getDay();
+    if (day !== 0 && day !== 6) {
+      count++;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
+}
+
+function formatResetDate(date: Date): string {
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function buildUsageTooltip(
+  planUsage: PlanUsage,
+  billingCycleStart?: string,
+  billingCycleEnd?: string
+): vscode.MarkdownString {
+  const config = vscode.workspace.getConfiguration("cursorSpending");
+  const projectionMode = config.get<string>("projectionMode", "allDays");
+  const weekdaysOnly = projectionMode === "weekdaysOnly";
+
   const autoPercent =
     typeof planUsage.autoPercentUsed === "number"
       ? planUsage.autoPercentUsed.toFixed(1)
@@ -158,55 +243,70 @@ function buildUsageTooltip(planUsage: PlanUsage): vscode.MarkdownString {
       ? planUsage.apiPercentUsed
       : 0;
 
+  const billing = resolveBillingPeriod(billingCycleStart, billingCycleEnd);
+  const resetLabel = billing ? `Resets ${formatResetDate(billing.end)}` : null;
+
+  const hasLimit = typeof planUsage.limit === "number";
+  const limitUsd = hasLimit ? planUsage.limit! / 100 : null;
+
   const lines: string[] = [];
 
-  lines.push(`### Auto: ${autoPercent}%`);
+  if (resetLabel) {
+    lines.push(`*${resetLabel}*`);
+    lines.push("");
+  }
+
+  // Auto: subtext inline with %, then extra air before the bar
+  lines.push(
+    `**Auto: ${autoPercent}%** — Consumed by Auto and Composer; extra draws on API quota.`
+  );
+  lines.push("");
   lines.push("");
   lines.push("```");
   lines.push(progressBar(autoPercentNum));
   lines.push("```");
-  lines.push("");
-  lines.push(
-    "Consumed by Auto and Composer models. Additional usage consumes API quota."
-  );
-  lines.push("");
 
-  lines.push(`### API: ${apiPercent}%`);
+  // API: same pattern
+  lines.push("");
+  lines.push(`**API: ${apiPercent}%** — Other models (not Auto or Composer).`);
+  lines.push("");
   lines.push("");
   lines.push("```");
   lines.push(progressBar(apiPercentNum));
   lines.push("```");
-  lines.push("");
-  const apiUsageUSD =
-    typeof planUsage.limit === "number" ? planUsage.limit / 100 : null;
-  lines.push(
-    apiUsageUSD
-      ? `Consumed by other models. Your plan includes at least $${apiUsageUSD.toFixed(2)} of API usage.`
-      : "Consumed by other models."
-  );
-
-  const hasSpend =
-    typeof planUsage.totalSpend === "number" ||
-    typeof planUsage.includedSpend === "number" ||
-    typeof planUsage.remaining === "number";
-  if (hasSpend) {
+  if (limitUsd !== null) {
     lines.push("");
-    const parts: string[] = [];
-    if (typeof planUsage.totalSpend === "number") {
-      parts.push(`$${formatCentsAsUsd(planUsage.totalSpend)} used`);
-    }
-    if (typeof planUsage.includedSpend === "number") {
-      parts.push(`$${formatCentsAsUsd(planUsage.includedSpend)} included`);
-    }
-    if (typeof planUsage.remaining === "number") {
-      parts.push(`$${formatCentsAsUsd(planUsage.remaining)} remaining`);
-    }
-    lines.push("Spend: " + parts.join(", ") + ".");
+    lines.push(`Your plan includes **$${limitUsd.toFixed(2)}** of API usage.`);
   }
 
   if (planUsage.bonusTooltip && planUsage.bonusTooltip.trim()) {
     lines.push("");
     lines.push(`*${planUsage.bonusTooltip.trim()}*`);
+  }
+
+  // Straight-line projection (markdown list so each line renders separately)
+  if (billing) {
+    const now = new Date();
+    const totalDays = countDays(billing.start, billing.end, weekdaysOnly);
+    const elapsedDays = countDays(billing.start, now, weekdaysOnly);
+
+    if (elapsedDays > 0 && totalDays > 0) {
+      const ratio = totalDays / elapsedDays;
+      const modeLabel = weekdaysOnly ? "weekdays" : "all days";
+      const resetStr = formatResetDate(billing.end);
+
+      lines.push("");
+      lines.push(`**Projection** (${modeLabel}, ${elapsedDays}/${totalDays} days)`);
+      lines.push("");
+
+      const projAuto = autoPercentNum * ratio;
+      const projApi = apiPercentNum * ratio;
+      const autoWarn = projAuto > 100 ? " ⚠️ over 100%" : "";
+      const apiWarn = projApi > 100 ? " ⚠️ over 100%" : "";
+
+      lines.push(`- **Auto:** ~${projAuto.toFixed(1)}% by ${resetStr}${autoWarn}`);
+      lines.push(`- **API:** ~${projApi.toFixed(1)}% by ${resetStr}${apiWarn}`);
+    }
   }
 
   lines.push("");
@@ -220,7 +320,9 @@ function buildUsageTooltip(planUsage: PlanUsage): vscode.MarkdownString {
 
 function setStatusBarUsage(
   item: vscode.StatusBarItem,
-  planUsage: PlanUsage
+  planUsage: PlanUsage,
+  billingCycleStart?: string,
+  billingCycleEnd?: string
 ): void {
   const autoPercent =
     typeof planUsage.autoPercentUsed === "number"
@@ -240,7 +342,7 @@ function setStatusBarUsage(
       ? `$(cloud) API: ${apiPercent.toFixed(1)}%`
       : "$(cloud) API: —";
   item.text = `${autoText}  ${apiText}`;
-  item.tooltip = buildUsageTooltip(planUsage);
+  item.tooltip = buildUsageTooltip(planUsage, billingCycleStart, billingCycleEnd);
   item.command = {
     title: "Open Cursor Dashboard",
     command: "vscode.open",

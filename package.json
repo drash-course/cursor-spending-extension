@@ -35,6 +35,23 @@
           "minimum": 1,
           "maximum": 1440,
           "description": "Refresh interval in minutes"
+        },
+        "cursorSpending.billingCycleDay": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "maximum": 31,
+          "description": "Day of month your billing cycle resets (1-31). Used as a fallback if the API does not return billing period dates. Set to 0 to rely on the API value only."
+        },
+        "cursorSpending.projectionMode": {
+          "type": "string",
+          "enum": ["allDays", "weekdaysOnly"],
+          "enumDescriptions": [
+            "Project usage across all calendar days in the billing period",
+            "Project usage across weekdays (Mon-Fri) only"
+          ],
+          "default": "allDays",
+          "description": "Controls how the straight-line usage projection counts days in the billing period"
         }
       }
     },

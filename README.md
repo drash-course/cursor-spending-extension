@@ -1,77 +1,76 @@
 # Cursor Spending
 
-View your Cursor usage (Auto and API) in the status bar—with a single segment, progress bars in the tooltip, and spend details.
+View your **Cursor** usage in the status bar and a detailed hover tooltip: Auto, API, optional **on-demand** cap usage, billing period context, and straight-line projections.
 
 ![Screenshot](images/cursor-usage-preview.png)
 
 ## Features
 
-- **Status bar** – One segment showing **Auto** and **API** usage percentages (e.g. `Auto: 1.4%  API: 4.5%`). Click to open the [Cursor dashboard](https://cursor.com/dashboard?tab=spending).
-- **Rich tooltip** – Hover to see:
-  - Progress bars for Auto and API usage
-  - What each bar means: Auto and Composer models vs other models, extra usage vs API quota, and included API usage when the dashboard API reports it
-  - Spend summary: total used, included, and remaining (when provided by the API)
-  - Bonus tooltip text when present
-- **Token setup** – If the session token is missing, clicking the status bar opens a panel to paste your token, with a link to the dashboard and a Save button. The token is stored in your settings.
-- **Refresh** – Data refreshes automatically (default: every 20 minutes). Use **Cursor Spending: Refresh usage** to refresh immediately.
+- **Status bar** – **Auto** and **API** percentages (codicons). If you have a **finite on-demand spend cap** configured, a third segment **`$: %`** shows how much of that cap you have used. Click the segment to open the [dashboard Spending tab](https://cursor.com/dashboard?tab=spending).
+- **Rich tooltip** – Progress bars (Auto / API / on-demand when applicable), short explanations, plan **included API allowance** (`limit`), optional **bonus spend** and **bonusTooltip**, on-demand messaging when no individual cap is returned, **billing reset** line when cycle dates are known (or from settings fallback).
+- **Projection** – Linear extrapolation to end of billing period (`allDays` or **weekdays only**), with optional **100% crossing** hints. Projection block is monospace for alignment.
+- **Diagnostics** – Each successful fetch appends the **full JSON** response to the **Output** channel **Cursor Spending** (useful if Cursor changes fields).
 
 ## Requirements
 
 - **VS Code** or **Cursor** `^1.85.0`
-- A Cursor account (used to obtain the session token)
+- A Cursor account and session cookie value for `WorkosCursorSessionToken`
 
 ## Installation
 
-### From the Marketplace
+### Marketplace
 
-1. Open the Extensions view (`Ctrl+Shift+X` / `Cmd+Shift+X`).
-2. Search for **Cursor Spending**.
-3. Click **Install**.
+1. Extensions (`Ctrl+Shift+X` / `Cmd+Shift+X`).
+2. Search **Cursor Spending**.
+3. Install.
 
-### Install from VSIX (local build)
+### VSIX (local build)
 
-1. Clone the repo and run: `npm install && npm run compile`
-2. Run: `npx @vscode/vsce package`
-3. In the editor: **Extensions** → **...** → **Install from VSIX...** and select the generated `.vsix` file.
+```bash
+npm install && npm run compile
+npx @vscode/vsce package
+```
 
-## Quick Start
+Then **Install from VSIX…** and select the generated `.vsix`.
 
-1. **Get your session token**
-   - Open [cursor.com/dashboard](https://cursor.com/dashboard) in a browser and sign in.
-   - Open DevTools (**F12** or **Cmd+Option+I**) → **Application** (Chrome) or **Storage** (Firefox) → **Cookies** → `https://cursor.com`.
-   - Copy the **Value** of the **WorkosCursorSessionToken** cookie.
+## Quick start
 
-2. **Configure the extension**
-   - Open Settings (`Ctrl+,` / `Cmd+,`), search for **Cursor Spending**, and paste the token into **Cursor Spending: Session Token**.
-   - Or leave the token empty and click the status bar segment; the setup panel will open so you can paste and save the token there.
+1. Sign in at [cursor.com/dashboard](https://cursor.com/dashboard).
+2. DevTools → **Application** → **Cookies** → `cursor.com` → copy **`WorkosCursorSessionToken`** value.
+3. Settings → search **Cursor Spending** → paste **Session Token**, or click the status item when empty to open the token panel.
 
-3. The status bar will show usage and refresh on the configured interval (default 20 minutes).
-
-## Extension Settings
+## Extension settings
 
 | Setting | Description | Default |
 |--------|-------------|---------|
-| `cursorSpending.sessionToken` | Your WorkosCursorSessionToken cookie value from [cursor.com/dashboard](https://cursor.com/dashboard). Get it from DevTools → Application → Cookies. | `""` |
-| `cursorSpending.refreshInterval` | How often to fetch usage, in minutes. | `20` (min: 1, max: 1440 = 1 day) |
+| `cursorSpending.sessionToken` | `WorkosCursorSessionToken` cookie value. | `""` |
+| `cursorSpending.refreshInterval` | Fetch interval (minutes). | `20` (1–1440) |
+| `cursorSpending.billingCycleDay` | Day of month (1–31) billing resets if API omits `billingCycleStart` / `End`. `0` = API only. | `0` |
+| `cursorSpending.projectionMode` | `allDays` or `weekdaysOnly` for projection day counts. | `allDays` |
 
 ## Commands
 
 | Command | Description |
 |--------|-------------|
-| **Cursor Spending: Refresh usage** | Fetches current usage and updates the status bar. |
-| **Cursor Spending: Configure session token** | Opens the token setup panel (input, dashboard link, Save). |
+| **Cursor Spending: Refresh usage** | Fetch now. |
+| **Cursor Spending: Configure session token** | Open token setup webview. |
 
-## Security and Privacy
+## API reference
 
-- The session token is stored in your editor **user settings** (global). Do not share it or commit it to a repository.
-- The extension uses your token to call `https://cursor.com/api/dashboard/get-current-period-usage` (POST, with the token in a Cookie header). Your token is not sent anywhere else.
+The extension calls **`POST https://cursor.com/api/dashboard/get-current-period-usage`**.  
+A field-by-field reference (with a sample payload) lives in **[docs/api-get-current-period-usage.md](docs/api-get-current-period-usage.md)**. That endpoint is **undocumented** and may change.
+
+## Security and privacy
+
+- Token is stored in **global** user settings; do not commit or share it.
+- Only that Cursor URL is called, with your token in the `Cookie` header.
+- **Output** logging writes the **response body** (not your token) on each successful fetch; clear the channel if you prefer not to retain history.
 
 ## Development
 
-- Open this folder in VS Code or Cursor.
-- Run `npm install` and `npm run compile`.
-- Press **F5** to launch an Extension Development Host with the extension loaded.
-- Use **Developer: Reload Window** in the host to pick up code changes after recompiling.
+- `npm install` && `npm run compile`
+- Use **Run and Debug** → **Run Extension** (see `.vscode/launch.json`), or configure **F5** to run that launch config so the Extension Development Host loads **this** workspace’s `out/extension.js`.
+- **Developer: Reload Window** in the host after recompiling.
 
 ## License
 

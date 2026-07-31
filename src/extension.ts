@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 
 const API_URL = "https://cursor.com/api/dashboard/get-current-period-usage";
 const DASHBOARD_URL = "https://cursor.com/dashboard?tab=spending";
+const MODELS_PRICING_URL = "https://cursor.com/docs/models-and-pricing";
 
 interface PlanUsage {
   autoPercentUsed?: number;
@@ -216,19 +217,27 @@ function resolveBillingPeriod(
   return null;
 }
 
+function startOfLocalDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
 /**
- * Counts days between two dates.
+ * Counts billing days in the half-open interval [from, to).
  * When weekdaysOnly is true, counts Monday–Friday only.
+ * Both bounds are normalized to local midnight.
  */
 function countDays(from: Date, to: Date, weekdaysOnly: boolean): number {
+  const cursor = startOfLocalDay(from);
+  const toMidnight = startOfLocalDay(to);
   if (!weekdaysOnly) {
-    return Math.max(0, Math.round((to.getTime() - from.getTime()) / 86400000));
+    return Math.max(
+      0,
+      Math.round((toMidnight.getTime() - cursor.getTime()) / 86400000)
+    );
   }
   let count = 0;
-  const cursor = new Date(from);
-  cursor.setHours(0, 0, 0, 0);
-  const toMidnight = new Date(to);
-  toMidnight.setHours(0, 0, 0, 0);
   while (cursor < toMidnight) {
     const day = cursor.getDay();
     if (day !== 0 && day !== 6) {
@@ -237,6 +246,33 @@ function countDays(from: Date, to: Date, weekdaysOnly: boolean): number {
     cursor.setDate(cursor.getDate() + 1);
   }
   return count;
+}
+
+/**
+ * Counts billing days from cycle start through `through`'s calendar day (inclusive).
+ */
+function countDaysThrough(
+  from: Date,
+  through: Date,
+  weekdaysOnly: boolean
+): number {
+  const endExclusive = startOfLocalDay(through);
+  endExclusive.setDate(endExclusive.getDate() + 1);
+  return countDays(from, endExclusive, weekdaysOnly);
+}
+
+/** Shared footer links for success and error status-bar tooltips. */
+function tooltipActionLinks(): string {
+  // Markdown collapses ordinary spaces; NBSP keeps a visible gap in the hover.
+  const gap = "\u00a0".repeat(4);
+  return `[Refresh now](command:cursorSpending.refresh)${gap}\u00b7${gap}[Models & Pricing](${MODELS_PRICING_URL})`;
+}
+
+function trustedTooltipMarkdown(body: string): vscode.MarkdownString {
+  const md = new vscode.MarkdownString(body);
+  md.supportHtml = false;
+  md.isTrusted = true;
+  return md;
 }
 
 /**
@@ -437,10 +473,10 @@ function buildUsageTooltip(
   if (billing) {
     const now = new Date();
     const totalDays = countDays(billing.start, billing.end, weekdaysOnly);
-    const elapsedDays = countDays(billing.start, now, weekdaysOnly);
+    const dayNumber = countDaysThrough(billing.start, now, weekdaysOnly);
 
-    if (elapsedDays > 0 && totalDays > 0) {
-      const ratio = totalDays / elapsedDays;
+    if (dayNumber > 0 && totalDays > 0) {
+      const ratio = totalDays / dayNumber;
       const modeLabel = weekdaysOnly ? "weekdays" : "all days";
       const resetStr = formatResetDate(billing.end);
 
@@ -448,7 +484,9 @@ function buildUsageTooltip(
       lines.push("```");
       lines.push(TOOLTIP_DIVIDER_LINE);
       lines.push("```");
-      lines.push(`**Projected usage** by ${resetStr} (${modeLabel} only, ${elapsedDays}/${totalDays} days)`);
+      lines.push(
+        `**Projected usage** by ${resetStr} (${modeLabel} only, today is day ${dayNumber} of ${totalDays})`
+      );
       lines.push("");
 
       const projAuto = autoPercentNum * ratio;
@@ -460,7 +498,7 @@ function buildUsageTooltip(
         billing.start,
         billing.end,
         now,
-        elapsedDays,
+        dayNumber,
         autoPercentNum,
         projAuto,
         weekdaysOnly
@@ -469,7 +507,7 @@ function buildUsageTooltip(
         billing.start,
         billing.end,
         now,
-        elapsedDays,
+        dayNumber,
         apiPercentNum,
         projApi,
         weekdaysOnly
@@ -489,7 +527,7 @@ function buildUsageTooltip(
           billing.start,
           billing.end,
           now,
-          elapsedDays,
+          dayNumber,
           odMetrics.percentUsed,
           projOd,
           weekdaysOnly
@@ -506,12 +544,9 @@ function buildUsageTooltip(
   }
 
   lines.push("");
-  lines.push("[Refresh now](command:cursorSpending.refresh)");
+  lines.push(tooltipActionLinks());
 
-  const md = new vscode.MarkdownString(lines.join("\n"));
-  md.supportHtml = false;
-  md.isTrusted = true;
-  return md;
+  return trustedTooltipMarkdown(lines.join("\n"));
 }
 
 function setStatusBarUsage(
@@ -577,7 +612,9 @@ function setStatusBarError(
   tooltip: string
 ): void {
   item.text = text;
-  item.tooltip = tooltip;
+  item.tooltip = trustedTooltipMarkdown(
+    `${tooltip}\n\n${tooltipActionLinks()}`
+  );
   item.command = {
     title: "Open Cursor Dashboard",
     command: "vscode.open",

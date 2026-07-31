@@ -2,6 +2,12 @@
 
 All notable changes to Cursor Spending are documented here.
 
+## [1.1.1]
+
+- Error status-bar tooltip is trusted Markdown with **Refresh now** (same as success).
+- Tooltip footer: **Models & Pricing** link next to Refresh now.
+- Projection day count is inclusive of today (`today is day N of M`); pace uses that day number so reset day is day 1 and fair-share math is not one day behind.
+
 ## [1.1.0]
 
 - Tooltip: billing period reset line (`billingCycleStart` / `End`; optional `billingCycleDay` fallback).

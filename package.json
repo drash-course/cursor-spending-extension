@@ -7,7 +7,7 @@
     "url": "https://github.com/drash-course/cursor-spending-extension.git"
   },
   "description": "Cursor usage in the status bar: Auto, API, on-demand cap, tooltip with projections and billing context.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "icon": "images/spend_icon.png",
   "license": "MIT",
   "engines": {

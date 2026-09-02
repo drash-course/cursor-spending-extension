@@ -9,3 +9,4 @@ node_modules/**
 *.md
 !README.md
 !CHANGELOG.md
+!docs/api-get-current-period-usage.md
